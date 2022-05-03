@@ -1,0 +1,127 @@
+---
+title: "StormData"
+output:
+  pdf_document: default
+  html_document: default
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## 1: Synopsis
+The goal of the assignment is to explore the NOAA Storm Database and explore the effects of severe weather events on both population and economy.The database covers the time period between 1950 and November 2011.
+
+The following analysis investigates which types of severe weather events are most harmful on:
+
+1. Health (injuries and fatalities) 
+2. Property and crops (economic consequences)
+
+Information on the Data: [Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+
+## 2: Data Processing
+```{r DataLoading}
+setwd("~/Course 2 Assignment 5(2.)")
+library("knitr")
+library("plyr")
+library("dplyr")
+library("ggplot2")
+library("lattice")
+library("datasets")
+library("data.table")
+library("grid")
+library("gridExtra")
+
+link<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(link, destfile = paste0("~/Course 2 Assignment 5(2.)", "/repdata_data_StormData.csv.bz2"))
+a <- fread("repdata_data_StormData.csv.bz2")
+length(unique(a$EVTYPE))
+
+aDT<-as.data.table(a)
+colnames(aDT)
+dim(aDT)
+```
+
+
+## 3:Data Subsetting
+```{r DataSubsetting}
+aDTRemove <- colnames(aDT[, !c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")])
+aDT[, c(aDTRemove) := NULL]
+aDT <- aDT[(EVTYPE != "?" & (INJURIES > 0 | FATALITIES > 0 | PROPDMG > 0 | CROPDMG > 0)), c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]
+
+
+cols <- c("PROPDMGEXP", "CROPDMGEXP")
+aDT[,  (cols) := c(lapply(.SD, toupper)), .SDcols = cols]
+
+
+propDmgKey<-c("\"\"" = 10^0,"-" = 10^0,"+" = 10^0,"0" = 10^0,"1" = 10^1,"2" = 10^2,"3" = 10^3,"4" = 10^4,"5" = 10^5,"6" = 10^6,"7" = 10^7,"8" = 10^8,"9" = 10^9,"H" = 10^2,"K" = 10^3,"M" = 10^6,"B" = 10^9)
+cropDmgKey <-  c("\"\"" = 10^0,"?" = 10^0,"0" = 10^0,"K" = 10^3,"M" = 10^6,"B" = 10^9)
+
+aDT[, PROPDMGEXP := propDmgKey[as.character(aDT[,PROPDMGEXP])]]
+aDT[is.na(PROPDMGEXP), PROPDMGEXP := 10^0 ]
+
+aDT[, CROPDMGEXP := cropDmgKey[as.character(aDT[,CROPDMGEXP])] ]
+aDT[is.na(CROPDMGEXP), CROPDMGEXP := 10^0 ]
+
+aDT <- aDT[, .(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, propCost = PROPDMG * PROPDMGEXP, CROPDMG, CROPDMGEXP, cropCost = CROPDMG * CROPDMGEXP)]
+```
+
+
+## 4:Calcuating Total Property and Crop Cost & Fatalities and Injuries
+```{r Calculating}
+totalCostDT <- aDT[, .(propCost = sum(propCost), cropCost = sum(cropCost), Total_Cost = sum(propCost) + sum(cropCost)), by = .(EVTYPE)]
+totalCostDT <- totalCostDT[order(-Total_Cost), ]
+totalCostDT <- totalCostDT[1:10, ]
+head(totalCostDT, 5)
+
+
+totalInjuriesDT <- aDT[, .(FATALITIES = sum(FATALITIES), INJURIES = sum(INJURIES), totals = sum(FATALITIES) + sum(INJURIES)), by = .(EVTYPE)]
+totalInjuriesDT <- totalInjuriesDT[order(-FATALITIES), ]
+totalInjuriesDT <- totalInjuriesDT[1:10, ]
+head(totalInjuriesDT, 5)  
+```
+
+##5:Plot
+```{r}
+bad_stuff <- melt(totalInjuriesDT, id.vars="EVTYPE", variable.name = "bad_thing")
+head(bad_stuff, 5)
+
+###Most Harmful Events to Population Health
+healthChart <- ggplot(bad_stuff, aes(x=reorder(EVTYPE, -value), y=value))
+healthChart = healthChart + geom_bar(stat="identity", aes(fill=bad_thing), position="dodge")
+healthChart = healthChart + ylab("Frequency Count") 
+healthChart = healthChart + xlab("Event Type") 
+healthChart = healthChart + theme(axis.text.x = element_text(angle=45, hjust=1))
+healthChart = healthChart + ggtitle("Top 10 US Killers") + theme(plot.title = element_text(hjust = 0.5))
+healthChart
+
+###Events that have the Greatest Economic Consequences
+econ<-melt(totalCostDT, id.vars="EVTYPE", variable.name = "Damage_Type")
+econChart <- ggplot(econ, aes(x=reorder(EVTYPE, -value), y=value))
+econChart = econChart + geom_bar(stat="identity", aes(fill=Damage_Type), position="dodge")
+econChart = econChart + ylab("Cost (dollars)") 
+econChart = econChart + xlab("Event Type") 
+econChart = econChart + theme(axis.text.x = element_text(angle=45, hjust=1))
+econChart = econChart + ggtitle("Top 10 US Storm Events causing Economic Consequences") + theme(plot.title = element_text(hjust = 0.5))
+econChart
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
